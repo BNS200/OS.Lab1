@@ -1,6 +1,8 @@
 #include <pthread.h>
 #include <cstdio>
 #include <unistd.h>
+#include <cstring>   
+#include <cstdlib>
 
 struct Monitor { 
     pthread_mutex_t mutex;
@@ -75,15 +77,39 @@ void* consumer(void* arg){
     return nullptr;
 }
 
-int main(){
+int main() {
     Monitor m;
     pthread_t tp, tc;
 
-    pthread_create(&tc, nullptr, consumer, &m);
-    pthread_create(&tp, nullptr, producer, &m);
+    int tcCreated = pthread_create(&tc, nullptr, consumer, &m);
+    if (tcCreated != 0) {
+        fprintf(stderr, "[consumer]: pthread_create failed: %s\n", strerror(tcCreated));
+        return EXIT_FAILURE; 
+    }
 
-    pthread_join(tp, nullptr);
-    pthread_join(tc, nullptr);
+    int tpCreated = pthread_create(&tp, nullptr, producer, &m);
+    if (tpCreated != 0) {
+        fprintf(stderr, "[producer]: pthread_create failed: %s\n", strerror(tpCreated));
+        pthread_mutex_lock(&m.mutex);
+        m.stop = true;
+        pthread_cond_broadcast(&m.cond);
+        pthread_mutex_unlock(&m.mutex);
+        pthread_join(tc, nullptr);   
+        return EXIT_FAILURE;
+    }
 
-    return 0;
+    bool failed = false;
+    int tpJoined = pthread_join(tp, nullptr);
+    if (tpJoined != 0) {
+        fprintf(stderr, "[producer]: pthread_join failed: %s\n", strerror(tpJoined));
+        failed = true;
+    }
+
+    int tcJoined = pthread_join(tc, nullptr);
+    if (tcJoined != 0) {
+        fprintf(stderr, "[consumer]: pthread_join failed: %s\n", strerror(tcJoined));
+        failed = true;
+    }
+
+    return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
